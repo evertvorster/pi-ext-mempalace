@@ -86,12 +86,49 @@ Skip unload for: `status`, `wake_up`, `mine dryRun=true`, drawer listing, graph 
 
 ### Wings and their contents
 
-| Wing | Scope |
-|---|---|
-| `dora/` | **Me (Dora)** — identity, personality, my diary, my decisions |
-| `pi/` | **Pi software/ecosystem** — harness architecture, model insights, technical notes |
-| `evert/` | **Evert (the user)** — identity, preferences, milestones, projects |
-| `{project}/` | **Per-project** — e.g. `llm_thalamus/`, `dos_machines/`, `coqui-tts/` |
+| Wing | Scope | Resolves to (cwd) |
+|---|---|---|
+| `dora/` | **Me (Dora)** — identity, personality, my diary, my decisions | agent wing (agent-private) |
+| `pi/` | **Pi coding agent software itself** — harness architecture, model insights, technical notes | `~/.pi/agent` |
+| `evert/` | **Evert (the user)** — identity, preferences, milestones, projects | user/personal wing |
+| `{project}/` | **Per-project** — e.g. `llm_thalamus/`, `dos_machines/`, `Vega-Strike-Engine-Source/` | the project's directory |
+
+### Canonical wing = the cwd the content resolves to
+
+Everything about a project — code, decisions, mined content, sub-agent findings, and the
+transcripts the hooks capture — belongs in that project's wing, NOT `pi/`.
+
+The cwd-derived wing resolves in this order:
+
+1. The nearest ancestor `mempalace.yaml` containing a `wing:` line — authoritative.
+2. Otherwise the directory name, with characters outside `[A-Za-z0-9_-]` replaced by `_`.
+
+Case and hyphens survive step 2, and `mempalace init`/`mine` normalize the other way
+(lowercase, `-` → `_`). When a directory's name differs from its intended wing, pin it with an
+explicit `mempalace.yaml` — otherwise mining and tool-based saves split the project in two.
+
+- `llm_thalamus` → `~/Software/Projects/llm_thalamus` — its `mempalace.yaml` must say
+  `wing: llm_thalamus`; a hyphenated value would split the wing
+- `dos_machines` → `~/Software/Projects/dos-machines` — pinned by `wing: dos_machines`
+- `Vega-Strike-Engine-Source` → `~/Software/Projects/Vega-Strike-Engine-Source` — no yaml; the
+  directory name *is* the canonical wing, capitalisation and hyphens included
+
+### Wing hygiene — the rules we follow
+
+1. **`pi/` is ONLY the pi coding agent software.** Sub-agent/scout runs, model-testing
+   (`nemotron`), and agent-run artifacts are pi *mechanisms* — but if their **content is about
+   a project's codebase**, that content belongs in the **project wing**, not `pi/`. A scout or
+   reviewer run over llm-thalamus's source is **llm-thalamus** knowledge.
+2. **Mine per-project from the project's cwd.** `mempalace mine <project-dir> --wing
+   <project-wing>` so mined content lands in the right wing. Do NOT mine from `~/.pi/agent` and
+   let everything pile into `pi/`.
+3. **Keep one canonical name per project.** Pin it in the project's `mempalace.yaml` so mining
+   and tool saves agree; don't create hyphen/underscore or case duplicates of one project.
+4. **Captured transcripts follow the session cwd, not one shared wing.** Transcripts and diary
+   checkpoints are filed to `{cwd-wing}/transcripts`. Only content *about the agent itself*
+   belongs in the agent wing (`dora`, `pi`), and never in a shared/global `sessions` wing.
+5. **When re-mining after a cleanup**, re-mine each project into its own wing with current
+   state — don't recreate the old cross-wing pile-up.
 
 ### `dora/` rooms — about the personality running inside pi
 
@@ -149,10 +186,10 @@ Per-project wings (e.g. `llm_thalamus`, `dos_machines`) follow a consistent stru
 ### How to decide where to save
 
 1. **About me (Dora)?** → `dora/` — identity, preferences, workflows, diary
-2. **About the pi harness/ecosystem?** → `pi/` — architecture, technical, model-insights
+2. **About the pi coding agent software itself?** → `pi/` — architecture, technical, model-insights
 3. **About Evert?** → `evert/` — identity, preferences, decisions, milestones
-4. **About a specific project?** → the project wing (e.g. `llm_thalamus/problems`)
-5. **Unsure?** → default to the current project wing, that's always findable
+4. **About a specific project, or its code done by ANY agent (incl. scouts/sub-agents)?** → that project's wing
+5. **Unsure?** → default to the current project wing (the cwd), that's always findable
 
 ### Retrieval scoping
 1. Current project wing for project context

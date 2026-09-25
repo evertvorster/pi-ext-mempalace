@@ -94,15 +94,11 @@ function defaultWing(cwd: string): string {
   return detectWing(cwd) ?? sanitizeWingName(parse(cwd).name);
 }
 
-function agentMemoryWing(): string {
-  return sanitizeWingName(process.env.MEMPALACE_AGENT_ID || process.env.PI_AGENT_ID || "pi");
-}
-
-const agentMemorySeparationGuideline =
-  "Agent-private memories and captured sessions must be kept in that agent's own wing, e.g. pi/sessions for this pi agent or dora/sessions for Dora; do not store agent-private sessions in a shared/global `sessions` wing.";
+const captureWingGuideline =
+  "Captured transcripts and diary checkpoints follow the session's working directory — they are filed under the cwd-derived wing, not one shared wing. Project content belongs in the project wing; the pi wing is only for content about the pi coding agent itself.";
 
 const scopedRetrievalGuideline =
-  "Scope retrieval by default: current agent wing for agent/session memory, user wing (evert) when user facts/preferences are relevant, and cwd-matched project wing only when project context is relevant; avoid all-wing searches unless explicitly requested.";
+  "Scope retrieval by default: the current project wing for project context, the user wing (evert) for user facts and preferences, and the agent wing (dora) for agent-private memory; avoid all-wing searches unless the question is genuinely cross-cutting.";
 
 function compactJson(value: unknown, max = 12000): string {
   const text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -218,15 +214,13 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     const projectWing = defaultWing(ctx.cwd);
-    const captureWing = agentMemoryWing();
-    ctx.ui.setStatus("mempalace-capture", `Memory: capture active (${captureWing}/sessions)`);
+    ctx.ui.setStatus("mempalace-capture", `Memory: capture active (${projectWing}/transcripts)`);
     try {
       const status: any = await runBridge("status", {}, ctx.signal);
-      const captureCount = status?.wings?.[captureWing] ?? 0;
-      const projectCount = status?.wings?.[projectWing] ?? 0;
-      ctx.ui.setStatus("mempalace", `MemPalace: agent ${captureWing} (${captureCount}), project ${projectWing} (${projectCount})`);
+      const count = status?.wings?.[projectWing] ?? 0;
+      ctx.ui.setStatus("mempalace", `MemPalace: ${projectWing} (${count})`);
     } catch (error) {
-      ctx.ui.setStatus("mempalace", `MemPalace: ${captureWing} (unavailable: ${errorText(error).split(/\r?\n/)[0]})`);
+      ctx.ui.setStatus("mempalace", `MemPalace: ${projectWing} (unavailable: ${errorText(error).split(/\r?\n/)[0]})`);
     }
 
     const identityWing = "dora";
@@ -265,7 +259,7 @@ export default function (pi: ExtensionAPI) {
       );
     }
 
-    const wing = agentMemoryWing();
+    const wing = defaultWing(ctx.cwd);
     const transcriptPath = ctx.sessionManager.getSessionFile() ?? "";
     ctx.ui.setStatus("mempalace-capture", "Memory: precompact ingest…");
     ctx.ui.notify("MemPalace: ingesting transcript before compaction", "info");
@@ -296,7 +290,7 @@ export default function (pi: ExtensionAPI) {
 
     if (userCount <= 0 || userCount - lastCheckpointUserCount < checkpointInterval) return;
 
-    const wing = agentMemoryWing();
+    const wing = defaultWing(ctx.cwd);
     const transcriptPath = ctx.sessionManager.getSessionFile() ?? "";
     ctx.ui.setStatus("mempalace-capture", "Memory: checkpointing…");
     try {
@@ -337,7 +331,7 @@ export default function (pi: ExtensionAPI) {
       "Use exact code tools such as rg/read for precise code navigation; use mempalace_search for semantic recall and historical context.",
       "Do not inject MemPalace wake-up context automatically; search explicitly when relevant.",
       "NOTE: There are two tiers of memory. Structured memories (filed via mempalace_remember) live in rooms like decisions/, milestones/, problems/, workflows/. Auto-captured session transcripts live in {wing}/transcripts/ and are raw JSONL dumps — a safety net, not organized memories. Prefer searching structured rooms first.",
-      agentMemorySeparationGuideline,
+      captureWingGuideline,
       scopedRetrievalGuideline,
     ],
     parameters: Type.Object({
@@ -365,7 +359,7 @@ export default function (pi: ExtensionAPI) {
       "IMPORTANT: This is the PRIMARY memory channel. Auto-captured session transcripts go into {wing}/transcripts/ automatically — you don't need to save conversation dumps here. Use this tool for structured, durable memories that will be useful in future sessions.",
       "Do not save random chatter, transient command output, secrets, credentials, or low-value intermediate reasoning.",
       "When saving, choose an appropriate wing and room. Project memories belong in the project wing; user preferences belong in a user/person wing; pi behavior/workflows can go in a pi wing.",
-      agentMemorySeparationGuideline,
+      captureWingGuideline,
       "For problem memories, include cause and fix/workaround when known.",
     ],
     parameters: Type.Object({
@@ -455,7 +449,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Use mempalace_open_loops when the user asks what remains to do, what is pending, or what open loops exist for a project or pi itself.",
       "Project TODO.md files are operational task lists; MemPalace open_loop drawers are durable cross-session reminders with rationale and context.",
-      agentMemorySeparationGuideline,
+      captureWingGuideline,
       scopedRetrievalGuideline,
     ],
     parameters: Type.Object({

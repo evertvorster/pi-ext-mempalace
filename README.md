@@ -68,8 +68,13 @@ ln -s "$PWD" ~/.pi/agent/extensions-ordered/00-mempalace
 The extension registers lifecycle hooks that automatically save session context:
 
 - **Session start** — loads identity and project context from MemPalace
-- **Every ~15 turns** — partial transcript checkpoint to `{wing}/transcripts/`
-- **Before context compaction** — final transcript save
+- **Every ~15 turns** — partial transcript checkpoint to `{cwd-wing}/transcripts/`
+- **Before context compaction** — final transcript save to `{cwd-wing}/transcripts/`
+
+The capture wing is derived from the session's working directory (nearest
+`mempalace.yaml` `wing:`, otherwise the directory name), so each project's
+captures sit beside that project's own memories. The `pi/` wing is only for
+content about pi itself.
 
 ## License
 
