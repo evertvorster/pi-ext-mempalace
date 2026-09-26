@@ -209,6 +209,30 @@ def fail(message: str, details=None, code: int = 1):
     raise SystemExit(code)
 
 
+def in_band_error(data):
+    """Return the error message if *data* is an in-band failure, else None.
+
+    MemPalace's MCP tools signal failure by *returning* rather than raising,
+    in two shapes::
+
+        {"success": False, "error": "..."}   # the common shape
+        {"error": "..."}                    # no success flag at all
+
+    Wrapping either of those as ``ok`` hands the caller a success payload
+    with no ``drawer_id``, which is how a failed write ends up reported as
+    "Saved MemPalace memory ... Drawer ID: undefined".  Anything that looks
+    like a failure must travel as ``ok: False`` so the caller can tell.
+    """
+    if not isinstance(data, dict):
+        return None
+    fallback = "mempalace tool reported failure"
+    if data.get("success") is False:
+        return str(data.get("error") or fallback)
+    if "error" in data and "success" not in data:
+        return str(data.get("error") or fallback)
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Special-case handlers (not MCP tool functions)
 # ---------------------------------------------------------------------------
@@ -318,6 +342,9 @@ def main() -> None:
             fail(f"MCP tool function '{func_name}' not found in mcp_server")
 
         result = tool_func(**payload)
+        error = in_band_error(result)
+        if error is not None:
+            fail(error, result)
         ok(result)
 
     except SystemExit:
