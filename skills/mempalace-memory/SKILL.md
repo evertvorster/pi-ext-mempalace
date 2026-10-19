@@ -110,8 +110,11 @@ explicit `mempalace.yaml` — otherwise mining and tool-based saves split the pr
 - `llm_thalamus` → `~/Software/Projects/llm_thalamus` — its `mempalace.yaml` must say
   `wing: llm_thalamus`; a hyphenated value would split the wing
 - `dos_machines` → `~/Software/Projects/dos-machines` — pinned by `wing: dos_machines`
-- `Vega-Strike-Engine-Source` → `~/Software/Projects/Vega-Strike-Engine-Source` — no yaml; the
-  directory name *is* the canonical wing, capitalisation and hyphens included
+- `Vega-Strike-Engine-Source` → `~/Software/Projects/Vega-Strike-Engine-Source` — **no yaml, and
+  that is a trap**: the write path keeps case and hyphens (`sanitizeWingName`), the miner's
+  no-yaml fallback does not (`normalize_wing_name` lowercases it and turns `-` into `_`). Mine it
+  as `--wing Vega-Strike-Engine-Source`, or pin it, or the two paths split the project in two
+- `SpaceSim` → same trap: `mempalace mine` from its directory lands in `spacesim`
 
 ### Wing hygiene — the rules we follow
 
@@ -298,28 +301,34 @@ Accompanied by `HNSW mtime gap Xs exceeds threshold` warnings.
 
 ### Root cause
 
-The HNSW graph file (`link_lists.bin`) is **0 bytes** — the graph edges are missing.
-The data itself is intact in `chroma.sqlite3`; only the ephemeral graph cache is corrupt.
+The HNSW graph cache is corrupt or gone — the graph edges are missing while the data itself is
+intact in `chroma.sqlite3`. The tell is a `link_lists.bin` of **0 bytes**.
 
-### Fix (standard workaround for ChromaDB 1.5.x)
+### Diagnose — `mempalace repair-status`
+
+Read-only. Compares the SQLite row count against the HNSW element count for each collection
+(`drawers`, `closets`), never opens a Chroma client. Run this first — it answers the whole
+question, so the palace does not need to be poked by hand.
+
+### Fix — `mempalace repair`
 
 ```bash
-# 1. Remove corrupt graph files — Chroma rebuilds from SQLite on next access
-rm ~/.mempalace/palace/f22b4dd9-0160-472f-a5de-b2e8ab94288d/*.bin
+mempalace repair        # rebuilds the vector index from the SQLite metadata
+```
 
-# 2. Remove accumulated drift snapshots (optional, frees disk space)
-rm -rf ~/.mempalace/palace/f22b4dd9-0160-472f-a5de-b2e8ab94288d.drift-*
+Then `mempalace_reconnect()` in-session. No data loss: the SQLite file holds all vector data
+and metadata, and the `.bin` files beside it are only a cache.
 
-# 3. Reconnect in-session
+### If `repair` does not clear it
+
+The manual version of the same fix — drop the cache and let Chroma rebuild it:
+
+```bash
+# one directory per collection; the UUIDs change whenever the palace is rebuilt, so glob them
+ls -la ~/.mempalace/palace/*/link_lists.bin     # 0 bytes → that graph is corrupt
+rm ~/.mempalace/palace/*/*.bin
 mempalace_reconnect()
 ```
 
-No data loss. The SQLite backend (238 MB) holds all vector data and metadata.
-The `.bin` files are a cache — Chroma regenerates them.
-
-### Detection check
-
-```bash
-ls -la ~/.mempalace/palace/f22b4dd9-0160-472f-a5de-b2e8ab94288d/link_lists.bin
-# If 0 bytes → graph is corrupt
-```
+**Never write a collection UUID into a note** — an older copy of this section hardcoded one and
+every path in it was dead within a rebuild. Reach the directories by glob.
