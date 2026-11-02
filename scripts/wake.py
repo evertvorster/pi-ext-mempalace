@@ -44,7 +44,13 @@ import traceback
 # Rooms in the identity wing that make up the curated core, in render order, with
 # how many drawers each may claim. Everything else in that wing is either diary
 # (already covered by the "last" slot) or project matter that belongs elsewhere.
-DEFAULT_CORE = [["mind", 3], ["workflows", 2], ["decisions", 1], ["projects", 1]]
+DEFAULT_CORE = [
+    ["identity", 1],
+    ["mind", 3],
+    ["workflows", 2],
+    ["decisions", 2],
+    ["projects", 1],
+]
 
 # Rooms that never belong in a wake-up, whatever their filed_at says.
 EXCLUDED_ROOMS = {"transcripts"}
@@ -52,13 +58,13 @@ EXCLUDED_ROOMS = {"transcripts"}
 # Markers that mean "this is a previous wake-up or a raw session record", not memory.
 EXCLUDED_MARKERS = ("[MemPalace Wake-Up Context", '{"type":"session"', '{"type": "session"')
 
-MAX_CHARS_DEFAULT = 2600
+MAX_CHARS_DEFAULT = 4200
 MIN_CHARS_DEFAULT = 1200
-OPEN_SLOTS = 3
-DIARY_SENTENCES = 2
-SNIPPET = 190
-CORE_SNIPPET = 125
-OPEN_SNIPPET = 145
+OPEN_SLOTS = 4
+DIARY_SENTENCES = 3
+SNIPPET = 320
+CORE_SNIPPET = 200
+OPEN_SNIPPET = 220
 
 
 def emit(payload: dict) -> None:
@@ -255,13 +261,8 @@ def main() -> int:
         if opened:
             sections.append(opened)
 
-        try:
-            last = last_session(col, wings)
-        except Exception:
-            last = ""
-        if last:
-            sections.append([last])
-
+        # Durable core before the last session: principles outrank one narrative, and
+        # when the budget bites, the narrative is the cheaper thing to lose.
         try:
             core_lines = core_block(col, identity_wing, core)
         except Exception:
@@ -269,7 +270,14 @@ def main() -> int:
         if core_lines:
             sections.append(core_lines)
 
-        titles = ["## Where I am", "## Still open", "## Last session", "## Core"]
+        try:
+            last = last_session(col, wings)
+        except Exception:
+            last = ""
+        if last:
+            sections.append([last])
+
+        titles = ["## Where I am", "## Still open", "## Core", "## Last session"]
         titles = titles[: len(sections)]
 
         def render() -> str:
