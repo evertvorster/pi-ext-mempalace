@@ -10,15 +10,21 @@ transcript JSON that happened to contain the previous wake-up — the block was
 quoting itself. `python-mempalace` is third-party, so the composition lives
 here.
 
-The design (dora/identity, 2026-11-02) is five slots, in this order, each
+The design (dora/identity, 2026-11-02) is four slots, in this order, each
 trimmed from the tail when the budget runs out:
 
     identity   ~/.mempalace/identity.txt, rendered once, never per wing
     where      cwd, the wings being read, and how much is in them
     open       open / in_progress / blocked loops in those wings, with next_action
-    last       one diary head — chunk 0 only, first two sentences, dated
     core       the curated rooms in the identity wing, claimed by room not recency
     pointers   where to dig next
+
+There is deliberately no "last session" slot (2026-11-02, later the same day).
+Sessions run until the context fills, so one file holds several unrelated topics
+and its newest diary checkpoint is the *tail* of it — the least representative
+part, rendered as if it were a summary. What survives a session is the open
+loops and the decisions; the narrative is in `diary`, reachable by search, and
+where to find it is instructions (`AGENTS.md`), not state.
 
 Never rendered: the `transcripts` room, turn checkpoints, chunk_index > 0, and
 anything that looks like a previous wake-up or a raw session record.
@@ -43,7 +49,7 @@ import traceback
 
 # Rooms in the identity wing that make up the curated core, in render order, with
 # how many drawers each may claim. Everything else in that wing is either diary
-# (already covered by the "last" slot) or project matter that belongs elsewhere.
+# or project matter that belongs elsewhere.
 DEFAULT_CORE = [
     ["identity", 1],
     ["mind", 3],
@@ -61,7 +67,6 @@ EXCLUDED_MARKERS = ("[MemPalace Wake-Up Context", '{"type":"session"', '{"type":
 MAX_CHARS_DEFAULT = 4200
 MIN_CHARS_DEFAULT = 1200
 OPEN_SLOTS = 4
-DIARY_SENTENCES = 3
 SNIPPET = 320
 CORE_SNIPPET = 200
 OPEN_SNIPPET = 220
@@ -199,25 +204,6 @@ def open_slots(col, wings: list, slots: int = OPEN_SLOTS) -> list:
     return [row["line"] for row in found[:slots]]
 
 
-def last_session(col, wings: list) -> str:
-    """The newest diary head across the wings — one document, two sentences."""
-    best = None
-    for wing in wings:
-        for doc, meta in fetch(col, wing, "diary"):
-            if best is None or str(meta.get("filed_at") or "") > best[0]:
-                best = (str(meta.get("filed_at") or ""), doc, meta)
-            break
-    if not best:
-        return ""
-    filed, doc, meta = best
-    date = field(doc, "date") or filed[:10]
-    body = re.sub(r"^(type|date|scope|topic):.*$", "", doc, flags=re.M).strip()
-    # Diary entries usually open by restating their own date; the slot already carries it.
-    body = re.sub(r"^\d{4}-\d{2}-\d{2}[,.]?\s*", "", body)
-    text = sentences(body, DIARY_SENTENCES) or field(doc, "summary")
-    return f"{date} — {text}".rstrip(" —")
-
-
 def core_block(col, identity_wing: str, core: list) -> list:
     """The curated rooms, newest first within each, in the order given."""
     lines = []
@@ -283,8 +269,8 @@ def main() -> int:
         if opened:
             sections.append(opened)
 
-        # Durable core before the last session: principles outrank one narrative, and
-        # when the budget bites, the narrative is the cheaper thing to lose.
+        # Durable core last: when the budget bites, its tail comes off first, and the
+        # open loops — the actionable part — are the more expensive thing to lose.
         try:
             core_lines = core_block(col, identity_wing, core)
         except Exception:
@@ -292,18 +278,11 @@ def main() -> int:
         if core_lines:
             sections.append(core_lines)
 
-        try:
-            last = last_session(col, wings)
-        except Exception:
-            last = ""
-        if last:
-            sections.append([last])
-
-        titles = ["## Where I am", "## Still open", "## Core", "## Last session"]
+        titles = ["## Where I am", "## Still open", "## Core"]
         titles = titles[: len(sections)]
 
         def render() -> str:
-            blocks = [identity_block().strip(), ""]
+            blocks = [identity_block().strip()]
             for title, lines in zip(titles, sections):
                 if lines:
                     blocks.append(title + "\n" + "\n".join(lines))
@@ -336,7 +315,6 @@ def main() -> int:
                     "slots": {
                         "open": len(opened),
                         "core": len(core_lines),
-                        "last_session": bool(last),
                     },
                 },
             }

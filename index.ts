@@ -68,7 +68,7 @@ export default function (pi: ExtensionAPI) {
   async function generateWakeupContext(cwd: string, signal: AbortSignal | undefined): Promise<string> {
     // One composed block, not one per wing: L0 is identical in both, so rendering
     // it twice cost ~150 tokens to say the same thing. The slots are built in
-    // scripts/wake.py — identity once, where I am, open work, last session, core.
+    // scripts/wake.py — identity once, where I am, open work, core.
     const map = loadWingMap();
     const identityWing = map?.identityWing?.trim() || "dora";
     const wings = wingsForCwd(cwd, map);
