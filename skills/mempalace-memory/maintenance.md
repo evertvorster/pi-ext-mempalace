@@ -121,6 +121,26 @@ Learned by getting each of these wrong:
    spelling are safe. "What does this mean" and "what should this summary say" need the source retained
    and a human review path.
 
+## Two traps that cost a session each
+
+Both were hit on 2026-11-02 while writing a curated core into `dora`.
+
+**Chroma's row id is not a drawer id.** Tool calls take the *logical* drawer id —
+`drawer_<wing>_<room>_<hash>`, optionally with `_chunk_NNNNNN` stripped — obtained from `list_drawers`
+or `get_drawer`. The integers in `chroma.sqlite3` are internal row ids; passing one to `update_drawer`
+returns `Drawer not found`, and a `sqlite3` column three characters too narrow silently truncates a
+real id into a plausible-looking wrong one. Read ids from the tool, not from the database.
+Related wart: a drawer moved between wings by rewriting metadata **keeps its old wing in the id**, so
+`drawer_evert_open-loops_…` can legitimately live in `dora`. Trust the `wing` metadata field, never the
+id prefix.
+
+**Parallel writes corrupt the moment, not the store.** Eight `remember` calls in one block produced five
+"held by PID" refusals and one `Error deserializing pickle file: EOF while parsing` from an HNSW reader —
+a concurrent write caught mid-flush. Reads were intact and a serial retry succeeded, but that is luck, not
+design. `closets` is the repair for the ranking rows a move leaves behind: a moved drawer keeps a closet
+entry in the source wing saying "removed now" until a rebuild, so run `closets` on the wing you moved
+*out of*, not on the one you moved into.
+
 ## One session of history, for calibration
 
 The 2026-11-02 cleanup, as a worked example of the above: a fresh `sqlite3 .backup`, then `sync` (82

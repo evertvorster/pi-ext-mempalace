@@ -1,6 +1,6 @@
 {
   "name": "pi-ext-mempalace",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "MemPalace durable memory for pi — a cheap always-on recall tool, a deferred management tool, and the knowledge graph behind both",
   "license": "MIT",
   "type": "module",

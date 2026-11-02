@@ -19,8 +19,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import { COMMANDS, MANAGE_COMMANDS, PARAMS, RECALL_COMMANDS, paramsForSurface, validateCommand, type Surface } from "./commands.ts";
 import { runCommand } from "./dispatch.ts";
-import { errorText, runBridge } from "./palace.ts";
-import { defaultWing } from "./wing.ts";
+import { errorText, runBridge, runHelper } from "./palace.ts";
+import { defaultWing, loadWingMap, wingsForCwd } from "./wing.ts";
 
 /** A surface's command list, as the one-line index its description can afford. */
 function describeCommands(surface: Surface): string {
@@ -60,34 +60,19 @@ export default function (pi: ExtensionAPI) {
   let lastCheckpointUserCount = 0;
   const checkpointInterval = 15;
 
-  async function generateWakeupContext(
-    pi: ExtensionAPI,
-    signal: AbortSignal | undefined,
-    cwd: string,
-    identityWing: string,
-  ): Promise<string> {
-    const projectWing = defaultWing(cwd);
-    const wakeParts: string[] = [];
-
-    async function doWake(wing: string, label?: string): Promise<void> {
-      try {
-        const result = await pi.exec("mempalace", ["wake-up", "--wing", wing], { signal, timeout: 120000 });
-        const text = result.stdout?.trim() ?? "";
-        if (text) {
-          wakeParts.push(label ? `[${label} — ${wing}]\n${text}` : text);
-        }
-      } catch (_e) {
-        // Best-effort; session continues without it.
-      }
+  async function generateWakeupContext(cwd: string, signal: AbortSignal | undefined): Promise<string> {
+    // One composed block, not one per wing: L0 is identical in both, so rendering
+    // it twice cost ~150 tokens to say the same thing. The slots are built in
+    // scripts/wake.py — identity once, where I am, open work, last session, core.
+    const map = loadWingMap();
+    const identityWing = map?.identityWing?.trim() || "dora";
+    const wings = wingsForCwd(cwd, map);
+    try {
+      const data = await runHelper("wake.py", { cwd, wings, identity_wing: identityWing }, signal);
+      return String(data?.text ?? "").trim();
+    } catch (_e) {
+      return ""; // best-effort; the session continues without it
     }
-
-    await doWake(identityWing);
-    if (projectWing && projectWing !== identityWing) {
-      await doWake(projectWing, "Project Context");
-    }
-
-    const joiner = "\n\n==================================================\n\n";
-    return wakeParts.join(joiner);
   }
 
   pi.on("session_start", async (_event, ctx) => {
@@ -101,8 +86,7 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setStatus("mempalace", `MemPalace: ${projectWing} (unavailable: ${errorText(error).split(/\r?\n/)[0]})`);
     }
 
-    const identityWing = "dora";
-    const wakeText = await generateWakeupContext(pi, ctx.signal, ctx.cwd, identityWing);
+    const wakeText = await generateWakeupContext(ctx.cwd, ctx.signal);
     if (wakeText) {
       // appendCustomMessageEntry rather than sendUserMessage: a custom entry joins
       // the context without starting an agent run.
@@ -121,8 +105,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_before_compact", async (_event, ctx) => {
     // Re-inject wake-up context before compaction so it survives as a kept entry.
-    const identityWing = "dora";
-    const wakeText = await generateWakeupContext(pi, ctx.signal, ctx.cwd, identityWing);
+    const wakeText = await generateWakeupContext(ctx.cwd, ctx.signal);
     if (wakeText) {
       ctx.sessionManager.appendCustomMessageEntry(
         "mempalace-wakeup",

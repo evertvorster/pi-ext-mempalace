@@ -35,6 +35,7 @@ const HELPERS: Record<string, { path: string; env: string }> = {
   "coverage.py": { path: join(here, "scripts", "coverage.py"), env: "KG_COVERAGE_OUTPUT" },
   "orphans.py": { path: join(here, "scripts", "orphans.py"), env: "KG_ORPHANS_OUTPUT" },
   "closets_rebuild.py": { path: join(here, "scripts", "closets_rebuild.py"), env: "KG_CLOSETS_OUTPUT" },
+  "wake.py": { path: join(here, "scripts", "wake.py"), env: "KG_WAKE_OUTPUT" },
 };
 
 export function errorText(error: unknown): string {
