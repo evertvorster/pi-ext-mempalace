@@ -85,6 +85,24 @@ def field(doc: str, name: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+TOMBSTONE_PREFIXES = ("SUPERSEDED", "CLOSED", "SOLVED", "DONE", "RESOLVED")
+
+
+def is_tombstone(doc: str) -> bool:
+    """Closed history is worth keeping in the palace and worth nothing in a wake-up.
+
+    Superseding leaves the old drawer in place with `superseded:` and a summary that
+    says so — that is the record. Rendering it would spend a slot on a statement
+    whose only content is that it is no longer true.
+    """
+    if field(doc, "superseded"):
+        return True
+    # Not every tombstone carries a header: some are a rewritten body whose first
+    # line is the verdict, so check the body head as well as the summary field.
+    head = (field(doc, "summary") or doc or "").lstrip("-— ").strip().upper()
+    return any(head.startswith(prefix) for prefix in TOMBSTONE_PREFIXES)
+
+
 def sentences(text: str, count: int) -> str:
     """The first `count` sentences, cut at a boundary rather than mid-word."""
     flat = " ".join((text or "").split())
@@ -163,6 +181,8 @@ def open_slots(col, wings: list, slots: int = OPEN_SLOTS) -> list:
                     continue
                 if "OPEN" not in (field(doc, "summary") + doc[:200]).upper():
                     continue
+            if is_tombstone(doc):
+                continue
             summary = field(doc, "summary") or sentences(doc, 1)
             summary = re.sub(r"^(OPEN|IN PROGRESS|BLOCKED):\s*", "", summary, flags=re.I)
             date = field(doc, "date") or str(meta.get("filed_at") or "")[:10]
@@ -206,6 +226,8 @@ def core_block(col, identity_wing: str, core: list) -> list:
         for doc, _meta in fetch(col, identity_wing, room):
             if taken >= count:
                 break
+            if is_tombstone(doc):
+                continue
             summary = field(doc, "summary") or sentences(doc, 1)
             if not summary:
                 continue
