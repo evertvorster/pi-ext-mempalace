@@ -59,6 +59,11 @@ const captureWingGuideline =
 export default function (pi: ExtensionAPI) {
   let lastCheckpointUserCount = 0;
   const checkpointInterval = 15;
+  // `pi -c` — how the UI launches a session — fires session_start twice in one
+  // process, 3 s apart, and both appends land (verified 2026-11-02: two
+  // byte-identical blocks, 2 999 chars each). The block is a function of cwd and
+  // curated memory, not of session history, so the second copy says nothing new.
+  let wakeDelivered = false;
 
   async function generateWakeupContext(cwd: string, signal: AbortSignal | undefined): Promise<string> {
     // One composed block, not one per wing: L0 is identical in both, so rendering
@@ -86,8 +91,10 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setStatus("mempalace", `MemPalace: ${projectWing} (unavailable: ${errorText(error).split(/\r?\n/)[0]})`);
     }
 
+    if (wakeDelivered) return;
     const wakeText = await generateWakeupContext(ctx.cwd, ctx.signal);
     if (wakeText) {
+      wakeDelivered = true;
       // appendCustomMessageEntry rather than sendUserMessage: a custom entry joins
       // the context without starting an agent run.
       try {

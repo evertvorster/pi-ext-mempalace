@@ -23,7 +23,7 @@ const palacePath = fileURLToPath(new URL("../palace.ts", import.meta.url));
 mock.module(palacePath, () => ({
   errorText: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   runBridge: async () => null,
-  runHelper: async () => null,
+  runHelper: async (script: string) => (script === "wake.py" ? { text: "wake" } : null),
   loadTaxonomy: async () => null,
   loadEntities: async () => null,
 }));
@@ -107,6 +107,24 @@ describe("extension startup", () => {
         expect({ hook: name, thrown }).toEqual({ hook: name, thrown: undefined });
       }
     }
+  });
+
+  test("delivers the wake-up block once, even when session_start fires twice", async () => {
+    const { pi, ctx, handlers } = harness();
+    const appended: string[] = [];
+    ctx.sessionManager.appendCustomMessageEntry = (_type: string, content: string) => appended.push(content);
+    const { default: extension } = await import("../index.ts");
+    extension(pi);
+
+    // `pi -c` runs session_start twice in one process; the second block is a
+    // byte-identical copy that costs ~750 tokens and says nothing new.
+    for (const fn of handlers.get("session_start") ?? []) {
+      await fn({}, ctx);
+      await fn({}, ctx);
+    }
+
+    expect(appended.length).toBe(1);
+    expect(appended[0]).toContain("wake");
   });
 
   test("cwd-derived wing and wake-up path survive an unreachable palace", async () => {
