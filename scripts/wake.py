@@ -64,9 +64,9 @@ EXCLUDED_ROOMS = {"transcripts"}
 # Markers that mean "this is a previous wake-up or a raw session record", not memory.
 EXCLUDED_MARKERS = ("[MemPalace Wake-Up Context", '{"type":"session"', '{"type": "session"')
 
-MAX_CHARS_DEFAULT = 4200
+MAX_CHARS_DEFAULT = 6000
 MIN_CHARS_DEFAULT = 1200
-OPEN_SLOTS = 4
+OPEN_SLOTS = None  # no cap; see open_slots
 SNIPPET = 320
 CORE_SNIPPET = 200
 OPEN_SNIPPET = 220
@@ -175,8 +175,15 @@ def identity_block() -> str:
         return "## L0 — IDENTITY\nNo identity configured."
 
 
-def open_slots(col, wings: list, slots: int = OPEN_SLOTS) -> list:
-    """Open work, as `- [wing] summary → next: …` lines."""
+def open_slots(col, wings: list, slots: int | None = None) -> list:
+    """Open work, as `- [wing] summary → next: …` lines.
+
+    No slot count: every loop that is still open is shown, and the character
+    budget is what bounds the list — trimmed from the tail, which is the oldest
+    loop, because `found` is sorted newest-first. A fixed cap hid the newest
+    loops whenever a stale pile happened to sort above them (2026-11-02: the
+    cap was 4, and 19 loops from June were never once seen).
+    """
     found = []
     for wing in wings:
         for doc, meta in fetch(col, wing, "open-loops"):
@@ -201,7 +208,7 @@ def open_slots(col, wings: list, slots: int = OPEN_SLOTS) -> list:
                 line = (cut[:stop] if stop > 80 else cut).rstrip(" ,;") + " …"
             found.append({"filed_at": str(meta.get("filed_at") or ""), "line": line, "wing": wing})
     found.sort(key=lambda row: row["filed_at"], reverse=True)
-    return [row["line"] for row in found[:slots]]
+    return [row["line"] for row in found[:slots]] if slots else [row["line"] for row in found]
 
 
 def core_block(col, identity_wing: str, core: list) -> list:
