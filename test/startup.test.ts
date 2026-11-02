@@ -72,12 +72,20 @@ describe("extension startup", () => {
     const { default: extension } = await import("../index.ts");
     extension(pi);
 
-    expect(tools.has("mempalace_fact")).toBe(true);
-    expect(tools.has("mempalace_ask")).toBe(true);
-    expect(tools.has("mempalace_maintain")).toBe(true);
-    for (const hook of ["session_start", "turn_end", "tool_call", "tool_result"]) {
+    expect(tools.has("mempalace")).toBe(true);
+    expect(tools.has("mempalace_manage")).toBe(true);
+
+    // Two surfaces, not forty tools: recall is declared every request, manage is
+    // deferred until a reflection session loads it.
+    expect(tools.get("mempalace").exposure).toBeUndefined();
+    expect(tools.get("mempalace_manage").exposure).toBe("deferred");
+    // The guard's tool_call/tool_result hooks are gone: name resolution and
+    // refusal are validation inside the tool now, not interception of tools we
+    // could not edit. Only the session lifecycle hooks remain.
+    for (const hook of ["session_start", "session_before_compact", "session_compact", "turn_end"]) {
       expect(handlers.has(hook)).toBe(true);
     }
+    expect(handlers.has("tool_call")).toBe(false);
   });
 
   test("every hook runs without throwing", async () => {

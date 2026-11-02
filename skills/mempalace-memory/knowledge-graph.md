@@ -17,7 +17,7 @@ useful; thousands of low-confidence triples mined from conversation would be wor
 ## Writing a fact
 
 ```
-mempalace_fact(subject, predicate, object, summary, details?, evidence?, wing?, validFrom?)
+command=fact(subject, predicate, object, summary, details?, evidence?, wing?, validFrom?)
 ```
 
 Files the triple **and** a project-fact drawer in one call, so the structured path costs one action.
@@ -31,7 +31,7 @@ relationship.
 Pass the value being replaced:
 
 ```
-mempalace_fact(subject="pi", predicate="uses_model",
+command=fact(subject="pi", predicate="uses_model",
                object="deepseek/deepseek-v4",
                oldObject="deepseek/deepseek-flash")
 ```
@@ -54,7 +54,7 @@ coexists with the old (a person can have two children).
   *current is true*. `kg_stats` and `as_of` queries treat it as ended immediately, so the two views
   disagree for the rest of the day.
 - To end something **now**, pass a UTC instant: `ended="2026-11-02T00:00:00Z"`.
-- `mempalace_fact` rejects partial dates and local times for `at`. KG temporal values are compared as
+- `command=fact` rejects partial dates and local times for `at`. KG temporal values are compared as
   text, so mixed formats silently return wrong answers.
 - **There is no KG delete.** `mempalace kg` offers only `normalize`. Closed history is permanent, and
   re-invalidating an ended fact returns success without rewriting `valid_to`. Test data written into the
@@ -92,7 +92,7 @@ facts).
 - Direction is consistent: `subject → predicate → object` reads as a sentence. `Kobie → child → Evert`
   and `Evert → step-parent → Ethen` both read forwards; mixing directions makes traversal ambiguous.
 
-The write guard enforces this mechanically on `kg_add` and `mempalace_fact`: an existing entity passes, a
+The write guard enforces this mechanically on `kg_add` and `command=fact`: an existing entity passes, a
 case/spelling variant is rewritten, an abbreviation of an existing name (`Evert` vs `Evert Vorster`) and
 a near-miss typo are refused with the correct name offered, and a genuinely new entity is allowed but
 reported.

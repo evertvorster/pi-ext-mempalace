@@ -29,9 +29,6 @@ export const TYPE_ROOM: Record<string, string> = {
 /** Rooms holding raw session capture rather than filed knowledge. */
 export const CAPTURE_ROOMS = new Set(["transcripts", "diary"]);
 
-/** Tasks `mempalace_maintain` offers — both are palace-wide, dry-run-first passes. */
-export const MAINTAIN_TASKS = ["orphans", "closets"] as const;
-
 /**
  * Accepted KG boundary instants. Text comparison, so the format matters: a bare
  * date means "valid through the whole day", which is why an invalidated fact can

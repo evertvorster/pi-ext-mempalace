@@ -16,13 +16,13 @@ a reorganisation.
 
 ## Orphans and the sync gap
 
-`mempalace_sync` prunes drawers whose source is **missing or gitignored** — but it only *reports*
+`command=sync` prunes drawers whose source is **missing or gitignored** — but it only *reports*
 sources it cannot resolve. In one cleanup, 82 sources were pruned and 1 049 were listed as unresolved and
 left in place.
 
 ```
-mempalace_maintain(task="orphans")                  # dry run: counts and the largest sources
-mempalace_maintain(task="orphans", apply=true)      # delete
+command=orphans/closets(task="orphans")                  # dry run: counts and the largest sources
+command=orphans/closets(task="orphans", apply=true)      # delete
 ```
 
 Only **absolute paths** count as orphans; labels like `pi-session:…` are provenance, not files. Take a
@@ -45,7 +45,7 @@ instead of file dumps.
 ## Closets
 
 See [topics-and-closets](topics-and-closets.md) for what they are. The maintenance fact: after any
-re-rooming, `mempalace_maintain(task="closets", wing=…, apply=true)` rebuilds them from current drawers.
+re-rooming, `command=orphans/closets(task="closets", wing=…, apply=true)` rebuilds them from current drawers.
 Closets are a rank boost, never a gate — a stale closet degrades ranking but cannot hide a drawer.
 
 ## Repairing a broken vector index
@@ -56,7 +56,7 @@ threshold` warnings. The tell is a `link_lists.bin` of **0 bytes**.
 ```bash
 mempalace repair-status     # compare SQLite rows with HNSW elements per collection
 mempalace repair            # rebuild the index from the SQLite metadata
-mempalace_reconnect()       # in-session, afterwards
+command=reconnect()       # in-session, afterwards
 ```
 
 No data is lost: the SQLite file holds every vector and all metadata; the `.bin` files are only a cache.
@@ -88,7 +88,7 @@ rows where there were 16 826 drawers plus 11 048 closets. Resolve segment ids by
 ### Metadata-only rewrites, not `update_drawer`
 
 `col.update(ids=…, metadatas=…)` needs no embedder, so it is fast and works while the ONNX runtime is
-busy. `mempalace_update_drawer` re-embeds every chunk — right for tens of drawers, ruinous for thousands.
+busy. `command=update_drawer` re-embeds every chunk — right for tens of drawers, ruinous for thousands.
 For a bulk move, rewrite metadata directly; for a small correction, use the tool.
 
 ### Never pass closet ids to the drawers collection

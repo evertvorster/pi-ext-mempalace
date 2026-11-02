@@ -4,7 +4,6 @@ import {
   isBoundaryInstant,
   isCaptureOnly,
   isFromSession,
-  MAINTAIN_TASKS,
   normalizeName,
   pluralEquivalent,
   resolveEntity,
@@ -161,11 +160,5 @@ describe("isBoundaryInstant", () => {
     expect(isBoundaryInstant("2026-11")).toBe(false);
     expect(isBoundaryInstant("2026-11-02 10:00")).toBe(false);
     expect(isBoundaryInstant("2026-11-02T10:00:00+02:00")).toBe(false);
-  });
-});
-
-describe("MAINTAIN_TASKS", () => {
-  test("offers exactly the two palace-wide passes", () => {
-    expect([...MAINTAIN_TASKS]).toEqual(["orphans", "closets"]);
   });
 });

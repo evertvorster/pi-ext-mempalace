@@ -9,12 +9,17 @@ MemPalace is pi's durable memory. It stores **drawers** — verbatim text with m
 **wing** (a project, a person, the agent) and **room** (a topic within it), plus a **knowledge graph**
 of typed entity facts alongside.
 
-Two layers, and the difference matters every time you read or write:
+Three layers, and which one you are looking at decides how much to trust it:
 
 | layer | what it is | how it gets there |
 |---|---|---|
-| **knowledge** | typed drawers you filed deliberately: decisions, problems, project facts, preferences, workflows | `mempalace_remember`, `mempalace_fact` |
+| **knowledge** | typed drawers filed deliberately: decisions, problems, project facts, preferences, workflows | `command=remember`, `command=fact` — a decision, made in a reflection pass |
 | **archive** | conversation digests, one per session: user turns, my prose, tool *names* — no file contents | the session hooks, automatically |
+| **session continuity** | observational memory's reflections, rendered into context only at compaction | automatic, session-scoped, never written here |
+
+Writing is not automatic and should not be. The value of the first layer is that everything in it was
+*decided* — a fact worth keeping, a decision with its rationale — so a rule for "which drawers are real"
+never has to exist. Anything captured automatically would dissolve that.
 
 The archive is not memory in the sense of belief. It is for "we discussed this on the 20th" — it gives
 recall of events better than a person's, and it must never be mistaken for knowledge. A search hit from
@@ -33,20 +38,28 @@ Scope it: the current project wing for project context, `evert` for facts and pr
 
 **Absence is a measurement, not a feeling.** The palace ranks, it never rejects: a nonsense query comes
 back with five confident-looking hits at similarity 0.2. So before answering "I have nothing on that",
-call `mempalace_ask` — it reports how many drawers it searched, how many cleared the line, whether they
+call `command="ask"` — it reports how many drawers it searched, how many cleared the line, whether they
 were knowledge or archive, and the nearest miss.
 
-## Which tool answers which question
+## Two tools, and when each is loaded
 
-| question | tool | why |
+`mempalace` is **always** available and carries reading only. `mempalace_manage` is **deferred**: it costs
+nothing until `/mempalace` loads it for a reflection session.
+
+| question | command | tool |
 |---|---|---|
-| "Do I have anything on X?" | `mempalace_ask` | scope + absence evidence, knowledge vs archive |
-| "Did we ever discuss X?" | `mempalace_search` | verbatim hits, ranked |
-| "What is X to Y, and since when?" | `mempalace_kg_query` | typed, time-bounded, exact — no ranking |
-| "What is still pending or blocked?" | `mempalace_open_loops` | filtered on each drawer's own `status:` |
-| "What happened in that session?" | `mempalace_diary_read` | chronological narrative |
-| "Show me that whole memory" | `mempalace_get_drawer` | search returns an 800-char preview, not the drawer |
-| "What is in this wing/room?" | `mempalace_list_drawers` | paginated, with provenance |
+| "Do I have anything on X?" | `ask` | `mempalace` |
+| "Did we ever discuss X?" | `search` | `mempalace` |
+| "What is still pending or blocked?" | `open_loops` | `mempalace` |
+| "Show me that whole memory" | `get_drawer` | `mempalace` |
+| "What is in this wing/room?" | `list_drawers` | `mempalace` |
+| "What is X to Y, and since when?" | `kg_query` | `mempalace_manage` |
+| "What happened in that session?" | `diary_read` | `mempalace_manage` |
+| "Remember this", "file that fact" | `remember`, `fact` | `mempalace_manage` |
+| Reorganising, sweeping, re-rooming | `orphans`, `closets`, `sync`, `taxonomy` | `mempalace_manage` |
+
+If a call needs the write side and it is not loaded, say so and activate it with `/mempalace` — do not
+work around it by stuffing prose into a search, and do not file mid-thought.
 
 Search is capped at an 800-character preview per hit — when a hit matters, `get_drawer` on its
 `drawer_id` is one call and gets the whole thing.
@@ -75,11 +88,11 @@ name offered — a second spelling splits the same content in two and nothing do
 
 | you learned | write it with |
 |---|---|
-| a decision, with rationale and evidence | `mempalace_remember(type="decision")` |
-| a checkable value (X uses Y, X is at path P) | `mempalace_fact` — triple **and** drawer in one call |
-| the same fact has changed | `mempalace_fact(..., oldObject=<current value>)` |
-| something needs follow-up across sessions | `mempalace_remember(type="open_loop")` with `status` and `next_action` |
-| what a session felt like, what I noticed | `mempalace_diary_write` |
+| a decision, with rationale and evidence | `command="remember", type="decision"` |
+| a checkable value (X uses Y, X is at path P) | `command=fact` — triple **and** drawer in one call |
+| the same fact has changed | `command="fact", …, oldObject=<current value>` |
+| something needs follow-up across sessions | `command=remember(type="open_loop")` with `status` and `next_action` |
+| what a session felt like, what I noticed | `command=diary_write` |
 
 Do **not** dump conversations into memory by hand — the hooks capture every session, and a hand-written
 transcript competes with real knowledge in the same index.
@@ -90,7 +103,7 @@ drawers of archaeology.
 
 **Supersede, don't duplicate.** When a fact changes, pass `oldObject` so the old value closes and the new
 one opens at one boundary. When a memory is wrong or overtaken but still worth keeping as history, rewrite
-it in place with `mempalace_update_drawer` and say what closed it and where the original lives. Two
+it in place with `command=update_drawer` and say what closed it and where the original lives. Two
 current facts about the same thing is not redundancy, it is a lie that reads like corroboration.
 
 ## What to save, what not to
@@ -99,8 +112,8 @@ Save: decisions with rationale, stable preferences, milestones, bugs with their 
 workflows, important quotes, durable project facts, pending follow-ups.
 
 Do not save: secrets or credentials, command output, transient state, low-confidence guesses, or a
-paraphrase of something already filed — check for a duplicate first (`mempalace_check_duplicate`, or
-`mempalace_ask`).
+paraphrase of something already filed — check for a duplicate first (`command=check_duplicate`, or
+`command=ask`).
 
 ## Trust order of what comes back
 
@@ -119,8 +132,8 @@ chunks of one drawer is one memory, not two confirmations.
 - **`add_drawer` rejects content over 100 000 characters** — split long text at natural boundaries.
 - **Never encode a qualifier in an entity name.** `Evert Vorster (nephew, Cape Town)` is a wart; the
   qualifier belongs in `located_in` facts about a distinct entity.
-- **`mempalace_sync` prunes only `missing` sources** and merely reports `unresolved` ones.
-  `mempalace_maintain(task="orphans")` is the sweep that actually removes them.
+- **`command=sync` prunes only `missing` sources** and merely reports `unresolved` ones.
+  `command=orphans/closets(task="orphans")` is the sweep that actually removes them.
 - **`mempalace mine`** does not exclude `.obsidian/`, `.trash/`, `node_modules/`, and is not idempotent
   across renamed files — it mines them as memory.
 
@@ -143,7 +156,9 @@ tool whose parameters you are not certain of — do not recite signatures from m
 
 | file | read it for |
 |---|---|
-| [tools](tools.md) | every tool this package ships, grouped by question, with the parameters that matter |
+| [recall](recall.md) | the five `mempalace` commands, and the parameters that change an answer |
+| [manage](manage.md) | the thirty-one `mempalace_manage` commands: write, knowledge graph, structure, maintenance |
+| [reflecting](reflecting.md) | the pass where memory gets written: what to file, in what shape, and when to stop |
 | [knowledge-graph](knowledge-graph.md) | triples, the closed predicate vocabulary, entity naming, temporal semantics |
 | [topics-and-closets](topics-and-closets.md) | wing/room doctrine, the shared spine, closets, re-rooming |
 | [maintenance](maintenance.md) | orphans, sync gaps, capture ageing, index repair, bulk-operation discipline |

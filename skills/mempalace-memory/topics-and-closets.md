@@ -69,7 +69,7 @@ dos machines|Machines;Python|→drawer_dos_machines_share_7f2d00…,drawer_dos_m
 - They are a **rank boost, never a gate** (`_closet_boosts()`). A stale closet cannot hide or add
   drawers, it only fails to lift them — which is why room-scoped search kept working after a re-rooming
   while the boost quietly disappeared.
-- After moving rooms, `mempalace_maintain(task="closets")` rebuilds from **current** drawers. **Never
+- After moving rooms, `command=orphans/closets(task="closets")` rebuilds from **current** drawers. **Never
   re-mine** a recaptured source to fix closets: mining would re-add the raw transcript and undo the
   digest pass.
 
