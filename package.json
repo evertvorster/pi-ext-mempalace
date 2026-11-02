@@ -1,14 +1,18 @@
 {
   "name": "pi-ext-mempalace",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "MemPalace durable memory extension for pi coding agent — structured memories, knowledge graph, session hooks, and cross-wing navigation",
   "license": "MIT",
   "type": "module",
   "main": "index.ts",
   "files": [
     "index.ts",
-    "scripts/bridge.py",
-    "scripts/cleanup_rooms.py",
+    "palace.ts",
+    "policy.ts",
+    "render.ts",
+    "guard.ts",
+    "extras.ts",
+    "scripts/*.py",
     "skills/**/*"
   ],
   "keywords": [
@@ -32,5 +36,8 @@
   },
   "dependencies": {
     "typebox": "^1.1.24"
+  },
+  "scripts": {
+    "test": "bun test"
   }
 }

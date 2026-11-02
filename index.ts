@@ -1,18 +1,13 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { fileURLToPath } from "node:url";
-import { dirname, join, parse } from "node:path";
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { execFile } from "node:child_process";
-import { tmpdir } from "node:os";
-import { join as joinPath } from "node:path";
-import { randomUUID } from "node:crypto";
-import { promisify } from "node:util";
+import { join, parse } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 
-const execFileAsync = promisify(execFile);
-
-const here = dirname(fileURLToPath(import.meta.url));
-const bridge = join(here, "scripts", "bridge.py");
+import { errorText, runBridge } from "./palace.ts";
+import { registerExtras } from "./extras.ts";
+import { registerGuard } from "./guard.ts";
+import { TYPE_ROOM } from "./policy.ts";
+import { renderKgQuery, renderListDrawers, renderSearch } from "./render.ts";
 
 // llamacpp PEG grammar bug: anyOf/const/enum schemas cause string values
 // to be extracted with literal quote chars (issue #22240). Workaround:
@@ -50,19 +45,9 @@ function unquoteEnumValue(value: string | undefined): string | undefined {
   return v;
 }
 
+/** Memory class → room. The map lives in policy.ts so there is one copy of it. */
 function roomForType(type: string): string {
-  const map: Record<string, string> = {
-    decision: "decisions",
-    preference: "preferences",
-    milestone: "milestones",
-    problem: "problems",
-    emotional_context: "emotional-context",
-    project_fact: "project-facts",
-    workflow: "workflows",
-    quote: "quotes",
-    open_loop: "open-loops",
-  };
-  return map[type] ?? "memories";
+  return TYPE_ROOM[type] ?? "memories";
 }
 
 function sanitizeWingName(value: string): string {
@@ -105,16 +90,6 @@ function compactJson(value: unknown, max = 12000): string {
   return text.length > max ? `${text.slice(0, max)}\n\n[truncated to ${max} characters]` : text;
 }
 
-function renderSearch(data: any): string {
-  const results = data?.results ?? [];
-  if (!Array.isArray(results) || results.length === 0) return compactJson(data);
-  return results.map((r: any, i: number) => {
-    const sim = r.similarity === undefined ? "" : ` similarity=${r.similarity}`;
-    const source = r.source_file ? ` source=${r.source_file}` : "";
-    return `[${i + 1}] ${r.wing ?? "?"}/${r.room ?? "?"}${sim}${source}\n${r.text ?? r.content ?? ""}`;
-  }).join("\n\n────────────────────────────────\n\n");
-}
-
 function formatMemory(params: any, source: string): string {
   const lines = [
     `type: ${params.type}`,
@@ -140,47 +115,6 @@ function formatMemory(params: any, source: string): string {
 export default function (pi: ExtensionAPI) {
   let lastCheckpointUserCount = 0;
   const checkpointInterval = 15;
-
-  function errorText(error: unknown): string {
-    return error instanceof Error ? error.message : String(error);
-  }
-
-  async function runBridge(command: string, payload: Record<string, unknown> = {}, signal?: AbortSignal) {
-    let stdout = "";
-    let stderr = "";
-    const outputFile = joinPath(tmpdir(), `pi-mempalace-${process.pid}-${randomUUID()}.json`);
-    try {
-      const result = await execFileAsync("/usr/bin/python", [bridge, command, JSON.stringify(payload)], {
-        signal,
-        timeout: 120000,
-        maxBuffer: 10 * 1024 * 1024,
-        env: { ...process.env, MEMPALACE_BRIDGE_OUTPUT: outputFile },
-      });
-      stdout = result.stdout ?? "";
-      stderr = result.stderr ?? "";
-    } catch (error: any) {
-      stdout = error?.stdout ?? "";
-      stderr = error?.stderr ?? "";
-      if (!existsSync(outputFile)) {
-        throw new Error(`mempalace bridge failed (${command}, code=${error?.code ?? "unknown"}, killed=${error?.killed ?? false})\nstdout:\n${stdout}\nstderr:\n${stderr}\n${errorText(error)}`);
-      }
-    }
-
-    const fileOutput = existsSync(outputFile) ? readFileSync(outputFile, "utf8") : "";
-    rmSync(outputFile, { force: true });
-    const jsonLine = (fileOutput || stdout).trim().split(/\r?\n/).filter(Boolean).at(-1);
-    if (!jsonLine) {
-      throw new Error(`mempalace bridge produced no JSON (${command})\nstdout:\n${stdout}\nstderr:\n${stderr}`);
-    }
-    let parsed: any;
-    try {
-      parsed = JSON.parse(jsonLine);
-    } catch (error) {
-      throw new Error(`mempalace bridge returned invalid JSON (${command}): ${errorText(error)}\nlast line:\n${jsonLine}\nstdout:\n${stdout}\nstderr:\n${stderr}`);
-    }
-    if (!parsed.ok) throw new Error(`${parsed.error ?? "mempalace bridge returned ok=false"}\n${parsed.details ?? ""}`);
-    return parsed.data;
-  }
 
   async function generateWakeupContext(
     pi: ExtensionAPI,
@@ -339,12 +273,14 @@ export default function (pi: ExtensionAPI) {
       wing: Type.Optional(Type.String({ description: "Optional wing/project/person. Defaults to detected current project wing if defaultToCurrentWing is true." })),
       room: Type.Optional(Type.String({ description: "Optional room/topic filter" })),
       limit: Type.Optional(Type.Number({ description: "Max results, default 5", minimum: 1, maximum: 20 })),
+      minSimilarity: Type.Optional(Type.Number({ description: "Only return drawers at or above this similarity (0-1). The palace ranks rather than rejects, so without this a nonsense query still returns confident-looking hits.", minimum: 0, maximum: 1 })),
       defaultToCurrentWing: Type.Optional(Type.Boolean({ description: "Use current project wing when wing is omitted. Default true." })),
     }),
     async execute(_id, params, signal, _onUpdate, ctx) {
       const wing = params.wing || (params.defaultToCurrentWing === false ? undefined : defaultWing(ctx.cwd));
-      const data = await runBridge("search", { query: params.query, wing, room: params.room, limit: params.limit ?? 5 }, signal);
-      return { content: [{ type: "text", text: renderSearch(data) }], details: data };
+      const data = await runBridge("search", { query: params.query, wing, room: params.room, limit: params.limit ?? 5, min_similarity: params.minSimilarity }, signal);
+      const rendered = await renderSearch(data, params.query, ctx.sessionManager.getSessionFile() ?? "");
+      return { content: [{ type: "text", text: rendered ?? compactJson(data) }], details: data };
     },
   });
 
@@ -466,7 +402,22 @@ export default function (pi: ExtensionAPI) {
       const status_filter = status && status !== "any" ? ` status: ${status}` : " status: open OR in_progress OR blocked";
       const query = params.query || `type: open_loop${status_filter} pending TODO follow-up next_action`;
       const data = await runBridge("search", { query, wing, room: "open-loops", limit: params.limit ?? 10 }, signal);
-      return { content: [{ type: "text", text: renderSearch(data) }], details: data };
+
+      // The search is fuzzy and its query only *mentions* status, so it happily
+      // returns finished work. A loop's own `status:` field is the truth.
+      const allowed = status && status !== "any" ? new Set([status]) : new Set(["open", "in_progress", "blocked"]);
+      const rows = Array.isArray(data?.results) ? data.results : [];
+      let hidden = 0;
+      const kept = rows.filter((r: any) => {
+        const match = /(?:^|\n)status:\s*([a-z_]+)/i.exec(String(r?.text ?? ""));
+        if (!match) return true;
+        if (allowed.has(match[1].toLowerCase())) return true;
+        hidden += 1;
+        return false;
+      });
+      const rendered = await renderSearch({ ...data, results: kept }, query, ctx.sessionManager.getSessionFile() ?? "", { broaden: false });
+      const note = hidden > 0 ? `\n[${hidden} finished loop${hidden === 1 ? "" : "s"} hidden — status not in ${[...allowed].join("/")}]` : "";
+      return { content: [{ type: "text", text: `${rendered ?? compactJson(data)}${note}` }], details: data };
     },
   });
 
@@ -606,7 +557,8 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_id, params, signal) {
       const data = await runBridge("list_drawers", { wing: params.wing, room: params.room, limit: params.limit, offset: params.offset }, signal);
-      return { content: [{ type: "text", text: compactJson(data) }], details: data };
+      const rendered = renderListDrawers(data);
+      return { content: [{ type: "text", text: rendered ?? compactJson(data) }], details: data };
     },
   });
 
@@ -891,10 +843,22 @@ export default function (pi: ExtensionAPI) {
       entity: Type.String({ description: "Entity to query (e.g. 'Max', 'MyProject', 'Alice')" }),
       as_of: Type.Optional(Type.String({ description: "Date filter — only facts valid at this date (YYYY-MM-DD, optional)" })),
       direction: Type.Optional(Type.String({ description: "outgoing (entity→?), incoming (?→entity), or both (default: both)" })),
+      predicate: Type.Optional(Type.String({ description: "Only facts with this relationship type, e.g. 'maintains' — a hub entity has dozens" })),
+      limit: Type.Optional(Type.Number({ description: "Max current facts to show, current first (default: all)", minimum: 1 })),
     }),
     async execute(_id, params, signal) {
       const data = await runBridge("kg_query", { entity: params.entity, as_of: params.as_of, direction: params.direction || "both" }, signal);
-      return { content: [{ type: "text", text: compactJson(data) }], details: data };
+      const facts = Array.isArray(data?.facts) ? data.facts : [];
+      const matching = params.predicate ? facts.filter((f: any) => f.predicate === params.predicate) : facts;
+      const current = matching.filter((f: any) => f.current !== false);
+      const ended = matching.filter((f: any) => f.current === false);
+      const capped = params.limit ? current.slice(0, params.limit) : current;
+      const details = { ...data, facts: [...capped, ...ended] };
+      const rendered = renderKgQuery(details, params.entity);
+      if (!rendered) return { content: [{ type: "text", text: compactJson(data) }], details: data };
+      const scope = params.predicate ? ` (predicate: ${params.predicate})` : "";
+      const note = params.limit && current.length > capped.length ? `\n[${current.length - capped.length} more current fact${current.length - capped.length === 1 ? "" : "s"} not shown — raise limit, or filter with predicate]` : "";
+      return { content: [{ type: "text", text: `${rendered.replace(/^"[^"]*"/, `"${params.entity}"${scope}`)}${note}` }], details };
     },
   });
 
@@ -1050,6 +1014,9 @@ export default function (pi: ExtensionAPI) {
       await pi.exec("mempalace", ["sweep"]);
     },
   });
+
+  registerGuard(pi);
+  registerExtras(pi);
 
   pi.registerCommand("mempalace-migrate", {
     description: "Migrate MemPalace schema (run mempalace migrate)",
