@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
-import { join, parse } from "node:path";
+import { dirname, join, parse } from "node:path";
 import { existsSync, readFileSync } from "node:fs";
 
 import { errorText, runBridge } from "./palace.ts";
